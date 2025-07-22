@@ -1,0 +1,131 @@
+---
+title: "Final"
+author: "Arjun Mandakath"
+date: "2025-07-16"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(plotly)
+library(DT)
+library(factoextra)
+library(FactoMineR)
+library(shiny)
+
+happiness <- read_csv("World Happiness Report Up to 2023 export 2025-07-18 21-12-01.csv")
+happiness <- happiness %>%
+  mutate(across(where(is.character), as.factor))
+
+happiness <- happiness %>%
+  filter(region != "Africa")
+
+numeric_data <- happiness %>%
+  select(where(is.numeric)) %>%
+  drop_na()
+```
+
+Row {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+selectInput("region", "Select Region:", 
+            choices = c("All", sort(unique(as.character(happiness$region)))), 
+            selected = "All")
+
+checkboxInput("show_legend", "Show Legends", value = TRUE)
+
+```
+
+Row {.tabset}
+-----------------------------------------------------------------------
+
+### Top 10 Happiest Countries
+
+```{r}
+renderPlot({
+  df <- happiness
+  if (input$region != "All") {
+    df <- df %>% filter(region == input$region)
+  }
+  top10 <- df %>% arrange(desc(happiness_score)) %>% head(10)
+  ggplot(top10, aes(x = reorder(country, happiness_score), y = happiness_score, fill = region)) +
+    geom_col() +
+    coord_flip() +
+    theme_minimal() +
+    theme(legend.position = if (input$show_legend) "right" else "none") +
+    labs(title = "Top 10 Happiest Countries", x = "Country", y = "Happiness Score")
+})
+
+```
+
+### PCA Biplot
+
+```{r}
+renderPlotly({
+  df <- happiness
+  if (input$region != "All") {
+    df <- df %>% filter(region == input$region)
+  }
+  numeric_filtered <- df %>% select(where(is.numeric)) %>% drop_na()
+  res.pca <- PCA(numeric_filtered, graph = FALSE)
+  res.pca$var$coord  
+  coords <- as.data.frame(res.pca$ind$coord)
+  coords <- coords %>%
+    mutate(country = df$country, region = df$region)
+  
+  plot_ly(data = coords, 
+          x = ~Dim.1, y = ~Dim.2,
+          type = 'scatter', mode = 'markers',
+          color = ~region,          
+          text = ~country, 
+          hoverinfo = 'text',
+          marker = list(size = 10)) %>%
+    layout(showlegend = input$show_legend,
+           title = "PCA: Happiness Factors by Country",
+           xaxis = list(title = "PC1: Wealth & Health"),
+           yaxis = list(title = "PC2: Freedom & Trust"))
+})
+```
+
+
+Row {.tabset}
+-----------------------------------------------------------------------
+
+### GDP vs Happiness
+
+```{r}
+renderPlotly({
+  df <- happiness
+  if (input$region != "All") {
+    df <- df %>% filter(region == input$region)
+  }
+  plot_ly(df, 
+          x = ~gdp_per_capita, 
+          y = ~happiness_score, 
+          type = 'scatter', 
+          mode = 'markers', 
+          color = ~region, 
+          text = ~country, 
+          marker = list(size = 10)) %>%
+    layout(showlegend = input$show_legend,
+           title = "GDP vs Happiness Score",
+           xaxis = list(title = "GDP per Capita"),
+           yaxis = list(title = "Happiness Score"))
+})
+```
+
+### Data Table
+
+```{r}
+renderDT({
+  happiness %>% datatable(filter = 'top', extensions = 'Buttons',
+                          options = list(dom = 'Blfrtip', buttons = c('copy', 'csv', 'excel')))
+})
+```
+
+
